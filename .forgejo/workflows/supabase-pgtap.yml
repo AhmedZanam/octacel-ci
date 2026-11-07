@@ -1,0 +1,89 @@
+name: Reusable PostgreSQL and Supabase gates
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+      node_version:
+        required: true
+        type: string
+
+jobs:
+  database:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    services:
+      postgres:
+        image: ghcr.io/supabase/postgres:15.8.1.060@sha256:0e2279598bc0224fb5960c3a61eb23270cd60119427f3a7bdec86ba282600dcc
+        env:
+          POSTGRES_USER: supabase_admin
+          POSTGRES_DB: octacel_ci
+          POSTGRES_PASSWORD: octacel_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supabase_admin -d octacel_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    timeout-minutes: 60
+    env:
+      TEST_DATABASE_URL: postgresql://supabase_admin:octacel_ci_only@postgres:5432/octacel_ci
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - name: Check out project source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ahmed.al-zanam/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+
+      - name: Install PostgreSQL client and Node dependencies
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends postgresql-client=17+278 postgresql-client-17=17.11-0+deb13u1 python3=3.13.5-1
+          node .octacel-ci/scripts/run_project_command.js install
+
+      - name: Enable pgTAP in the disposable database
+        run: psql --no-psqlrc --set ON_ERROR_STOP=1 --dbname "$TEST_DATABASE_URL" --command 'CREATE EXTENSION IF NOT EXISTS pgtap;'
+
+      - name: Verify migration history is append-only
+        run: python3 .octacel-ci/scripts/check_migration_history.py --base-ref "origin/${FORGEJO_BASE_REF:-main}" --migration-dir "$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["database"]["migrationsPath"])')"
+
+      - name: Apply migrations to disposable PostgreSQL
+        run: node .octacel-ci/scripts/run_project_command.js migrateTest
+
+      - name: Verify schema
+        run: node .octacel-ci/scripts/run_project_command.js schemaCheck
+
+      - name: Run pgTAP schema tests
+        run: python3 .octacel-ci/scripts/run_pgtap.py "$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["database"]["pgTapPath"])')"
+
+      - name: Run row-level security tests
+        run: python3 .octacel-ci/scripts/run_pgtap.py "$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["database"]["rlsTestPath"])')"
+
+      - name: Run project RLS test command
+        run: node .octacel-ci/scripts/run_project_command.js rlsTests
+
+      - name: Run organization and tenant isolation tests
+        run: python3 .octacel-ci/scripts/run_pgtap.py "$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["database"]["tenantIsolationTestPath"])')"
+
+      - name: Run project tenant isolation test command
+        run: node .octacel-ci/scripts/run_project_command.js tenantIsolation
+
+      - name: Run database-backed application integration tests
+        run: node .octacel-ci/scripts/run_project_command.js integration

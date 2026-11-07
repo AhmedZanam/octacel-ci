@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sourceSecurity": {
+    "gitleaks": "Any detected secret blocks the check. Secret output is redacted.",
+    "semgrep": "ERROR findings from the pinned local policy and pinned semgrep CLI block the check.",
+    "trivy": "Fixable and unfixable HIGH and CRITICAL source, IaC, and secret findings block the check.",
+    "osv": "CVSS 7.0 or higher blocks the check. Missing or malformed severity data fails closed. Lower severity advisories are reported but do not block."
+  },
+  "infrastructure": {
+    "checkov": "Any failed enabled Terraform policy check blocks the check.",
+    "tflint": "Any configured Terraform lint error blocks the check.",
+    "shellcheck": "ShellCheck errors and warnings block the check."
+  },
+  "image": "Trivy HIGH or CRITICAL image vulnerabilities block publication; an SBOM is required before push.",
+  "exceptions": "Do not disable a scanner or suppress a finding to obtain a green check. Document scoped false positives with owner, reason, expiration date, and a reviewed policy change."
+}

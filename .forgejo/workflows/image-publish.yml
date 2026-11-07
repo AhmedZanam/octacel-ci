@@ -1,0 +1,131 @@
+name: Reusable protected image publisher
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 45
+    env:
+      STORAGE_DRIVER: vfs
+      BUILDAH_ISOLATION: chroot
+      REGISTRY: git.octacel.com
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - name: Check out project source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ahmed.al-zanam/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+      - name: Install pinned rootless image build tools
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends buildah=1.39.3+ds1-1+b7 netavark=1.14.0-2 aardvark-dns=1.14.0-3 python3=3.13.5-1
+      - name: Validate the approved publish ref and build inputs
+        run: |
+          set -euo pipefail
+          case "$FORGEJO_REF" in
+            refs/heads/main|refs/tags/v*) ;;
+            *) echo "Ref is not eligible for image publication: $FORGEJO_REF" >&2; exit 1 ;;
+          esac
+          python3 .octacel-ci/scripts/validate_containerfile.py "$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["container"]["containerfile"])')"
+          python3 - <<'PY'
+          import json
+          import platform
+          config = json.load(open('.octacel/project.json', encoding='utf-8'))
+          required = set(config['container']['architectures'])
+          native = {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(platform.machine())
+          if required != {native}:
+              raise SystemExit(f'No isolated cross-architecture runner is configured; requested {sorted(required)}, available {native}.')
+          PY
+      - name: Build image without registry credentials
+        env:
+          LOCAL_IMAGE: octacel-ci:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          file="$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["container"]["containerfile"])')"
+          env -u FORGEJO_TOKEN -u GITHUB_TOKEN buildah bud --storage-driver=vfs --isolation=chroot --layers=false \
+            --label "org.opencontainers.image.source=${FORGEJO_SERVER_URL}/${FORGEJO_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${FORGEJO_SHA}" \
+            --file "$file" --tag "$LOCAL_IMAGE" .
+      - name: Scan image before registry authentication
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-artifacts
+          buildah push "octacel-ci:${{ github.sha }}" "oci-archive:.ci-artifacts/image.oci.tar"
+      - name: Enforce image severity policy
+        uses: docker://aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        with:
+          args: image --input .ci-artifacts/image.oci.tar --severity HIGH,CRITICAL --ignore-unfixed=false --exit-code 1
+      - name: Generate image SBOM before publication
+        uses: docker://ghcr.io/anchore/syft@sha256:4cc92b64ca74ffca4c94d4c8fcc01f217731375300be14d0b6eeb2e82eaa110a
+        with:
+          args: oci-archive:.ci-artifacts/image.oci.tar -o spdx-json=.ci-artifacts/image.spdx.json
+      - name: Derive immutable image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          image="$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["container"]["image"])')"
+          printf 'image=%s\n' "$image" >> "$FORGEJO_OUTPUT"
+          printf 'sha_tag=%s\n' "$image:${FORGEJO_SHA}" >> "$FORGEJO_OUTPUT"
+          if [[ "$FORGEJO_REF" == refs/tags/v* ]]; then
+            printf 'version_tag=%s\n' "$image:${FORGEJO_REF#refs/tags/}" >> "$FORGEJO_OUTPUT"
+          fi
+      - name: Authenticate for the registry push only
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+          REGISTRY_AUTH_FILE: /tmp/octacel-registry-auth.json
+        run: |
+          set -euo pipefail
+          printf '%s' "$REGISTRY_PASSWORD" | buildah login --authfile "$REGISTRY_AUTH_FILE" \
+            --username "$REGISTRY_USER" --password-stdin "$REGISTRY"
+      - name: Push commit-SHA image and approved semantic release tag
+        env:
+          REGISTRY_AUTH_FILE: /tmp/octacel-registry-auth.json
+        run: |
+          set -euo pipefail
+          image="$(python3 -c 'import json; print(json.load(open(".octacel/project.json"))["container"]["image"])')"
+          sha_tag="$image:${FORGEJO_SHA}"
+          buildah tag "octacel-ci:${FORGEJO_SHA}" "$sha_tag"
+          mkdir -p .ci-artifacts
+          buildah push --authfile "$REGISTRY_AUTH_FILE" --digestfile .ci-artifacts/commit.digest "$sha_tag"
+          printf '%s %s\n' "$sha_tag" "$(cat .ci-artifacts/commit.digest)" >> .ci-artifacts/image-digests.txt
+          if [[ "$FORGEJO_REF" == refs/tags/v* ]]; then
+            version_tag="$image:${FORGEJO_REF#refs/tags/}"
+            buildah tag "octacel-ci:${FORGEJO_SHA}" "$version_tag"
+            buildah push --authfile "$REGISTRY_AUTH_FILE" --digestfile .ci-artifacts/version.digest "$version_tag"
+            printf '%s %s\n' "$version_tag" "$(cat .ci-artifacts/version.digest)" >> .ci-artifacts/image-digests.txt
+          fi
+          rm -f "$REGISTRY_AUTH_FILE"
+      - name: Retain image SBOM and pushed image digests
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32
+        with:
+          name: published-image-evidence
+          path: |
+            .ci-artifacts/image.spdx.json
+            .ci-artifacts/image-digests.txt
+          if-no-files-found: error
+      - name: Remove temporary auth and build data
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f /tmp/octacel-registry-auth.json
+          rm -rf .ci-artifacts

@@ -1,0 +1,11 @@
+rules:
+  - id: octacel.javascript.dynamic-eval
+    message: Avoid evaluating dynamically supplied JavaScript.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern: eval($VALUE)
+  - id: octacel.javascript.dynamic-function
+    message: Avoid constructing executable code from strings.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern: new Function(...)

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:octacel:ci:project-contract:v1",
+  "title": "octaCEL project CI contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "description", "projectType", "commands", "database", "container", "targets", "resources"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "name": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "description": {"type": "string", "minLength": 1},
+    "projectType": {"enum": ["nextjs", "node-backend", "typescript-library", "browser-extension", "containerized-backend", "saas", "supabase-postgres", "terraform-infrastructure", "terraform-module", "podman-service"]},
+    "packageManager": {"type": ["string", "null"], "enum": ["npm", "pnpm", "yarn", null]},
+    "nodeVersion": {"type": ["string", "null"], "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "terraformVersion": {"type": ["string", "null"], "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "terraformRoot": {"type": ["string", "null"], "minLength": 1},
+    "commands": {"type": "object", "additionalProperties": {"type": ["array", "null"], "items": {"type": "string"}, "minItems": 1}},
+    "database": {"type": ["object", "null"], "additionalProperties": false, "required": ["kind", "migrationsPath", "pgTapPath", "rlsTestPath", "tenantIsolationTestPath"], "properties": {"kind": {"const": "supabase-postgres"}, "migrationsPath": {"type": "string", "minLength": 1}, "pgTapPath": {"type": "string", "minLength": 1}, "rlsTestPath": {"type": "string", "minLength": 1}, "tenantIsolationTestPath": {"type": "string", "minLength": 1}}},
+    "container": {"type": "object", "additionalProperties": false, "required": ["enabled", "image", "containerfile", "architectures"], "properties": {"enabled": {"type": "boolean"}, "image": {"type": ["string", "null"], "pattern": "^git\\.octacel\\.com/octacel/[a-z0-9]+(?:-[a-z0-9]+)*$"}, "containerfile": {"type": ["string", "null"], "minLength": 1}, "architectures": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["amd64", "arm64"]}}}},
+    "targets": {"type": "array", "minItems": 1, "items": {"enum": ["contabo-vps41-development", "contabo-vps42-staging", "oci-riyadh-amd64", "oci-riyadh-arm64"]}},
+    "resources": {"type": "object", "additionalProperties": false, "required": ["memoryMiB", "cpuCount", "storageGiB"], "properties": {"memoryMiB": {"type": "integer", "minimum": 1}, "cpuCount": {"type": "integer", "minimum": 1}, "storageGiB": {"type": "integer", "minimum": 1}}},
+    "secretReferences": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["environment", "path", "rotation"], "properties": {"environment": {"enum": ["ci", "development", "staging", "production"]}, "path": {"type": "string", "pattern": "^kv/.+#.+$"}, "rotation": {"type": "object", "additionalProperties": false, "required": ["owner", "reviewAfter"], "properties": {"owner": {"type": "string", "minLength": 1}, "reviewAfter": {"type": "string", "format": "date"}}}}}}
+  }
+}

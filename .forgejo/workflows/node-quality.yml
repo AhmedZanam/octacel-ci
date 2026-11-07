@@ -1,0 +1,65 @@
+name: Reusable Node.js quality gates
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+      node_version:
+        required: true
+        type: string
+      integration_enabled:
+        required: true
+        type: string
+
+jobs:
+  quality:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 45
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - name: Check out project source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ahmed.al-zanam/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+
+      - name: Set up the declared Node.js version
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install dependencies
+        run: node .octacel-ci/scripts/run_project_command.js install
+
+      - name: Check formatting
+        run: node .octacel-ci/scripts/run_project_command.js format
+
+      - name: Lint
+        run: node .octacel-ci/scripts/run_project_command.js lint
+
+      - name: Type check
+        run: node .octacel-ci/scripts/run_project_command.js typecheck
+
+      - name: Build
+        run: node .octacel-ci/scripts/run_project_command.js build
+
+      - name: Unit tests
+        run: node .octacel-ci/scripts/run_project_command.js unit
+
+      - name: Integration tests
+        if: inputs.integration_enabled == 'true'
+        run: node .octacel-ci/scripts/run_project_command.js integration

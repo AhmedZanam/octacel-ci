@@ -1,0 +1,75 @@
+name: Reusable project contract validation
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+    outputs:
+      project_type:
+        description: Validated project profile
+        value: ${{ jobs.validate.outputs.project_type }}
+      node_version:
+        description: Exact Node.js version
+        value: ${{ jobs.validate.outputs.node_version }}
+      terraform_version:
+        description: Exact Terraform version
+        value: ${{ jobs.validate.outputs.terraform_version }}
+      terraform_root:
+        description: Terraform working directory
+        value: ${{ jobs.validate.outputs.terraform_root }}
+      container_enabled:
+        description: Whether container jobs are required
+        value: ${{ jobs.validate.outputs.container_enabled }}
+      integration_enabled:
+        description: Whether the project has integration tests
+        value: ${{ jobs.validate.outputs.integration_enabled }}
+      targets_json:
+        description: Configured target profile IDs
+        value: ${{ jobs.validate.outputs.targets_json }}
+      expected_workflows_json:
+        description: Required gates for the selected project profile
+        value: ${{ jobs.validate.outputs.expected_workflows_json }}
+
+jobs:
+  validate:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 10
+    outputs:
+      project_type: ${{ steps.contract.outputs.project_type }}
+      node_version: ${{ steps.contract.outputs.node_version }}
+      terraform_version: ${{ steps.contract.outputs.terraform_version }}
+      terraform_root: ${{ steps.contract.outputs.terraform_root }}
+      container_enabled: ${{ steps.contract.outputs.container_enabled }}
+      integration_enabled: ${{ steps.contract.outputs.integration_enabled }}
+      targets_json: ${{ steps.contract.outputs.targets_json }}
+      expected_workflows_json: ${{ steps.contract.outputs.expected_workflows_json }}
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1 python3-pip=25.1.1+dfsg-1
+      - name: Check out project source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ahmed.al-zanam/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+
+      - name: Validate project profile
+        id: contract
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --break-system-packages jsonschema==4.25.1
+          python3 .octacel-ci/scripts/validate_project_config.py .octacel/project.json \
+            --schema .octacel-ci/.octacel/project.schema.json --output "$FORGEJO_OUTPUT"
