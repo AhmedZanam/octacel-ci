@@ -2,7 +2,7 @@
 
 Reusable workflows require Forgejo v15 or later and the called framework repository must be public. The installed server reported `15.0.11+gitea-1.22.0`. The active organization runner label is `octacel-org-ci`.
 
-**Current administrator action:** although `octacel-ci` is public, its owning `octaCEL` organization is private. A live template workflow failed during reusable-workflow expansion with `user does not exist`. Forgejo v15’s cross-repository workflow resolver requires the target owner to be publicly resolvable. Either make the organization publicly visible or relocate the public workflow repository to a public owner, then rerun the template workflow. Public organization visibility may reveal membership metadata. This task did not change that setting.
+The GitHub mirror has been transferred from the `octaCEL` organization to the public user owner `AhmedZanam`; the organization remains private. The canonical Forgejo repository remains under the public Forgejo user `ahmed.al-zanam`. Rerun the template workflow to verify cross-repository resolution before considering the reusable-workflow setup complete.
 
 ## Apply to a product repository
 

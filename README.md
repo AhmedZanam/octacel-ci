@@ -4,7 +4,7 @@ This repository holds versioned Forgejo Actions workflows and validation tools s
 
 ## Forgejo compatibility
 
-The active Forgejo instance reported `15.0.11+gitea-1.22.0` on 2026-11-07. Forgejo v15 supports reusable workflows through `workflow_call`, cross-repository workflow references, input/output contracts, and job expansion. The canonical public framework repository is `https://git.octacel.com/ahmed.al-zanam/octacel-ci`. Its public user owner keeps the `octaCEL` organization private while allowing Forgejo to resolve cross-repository workflow calls. Consumer workflows and internal checkout steps must use this owner and pin a full commit SHA. The GitHub mirror remains at `https://github.com/octaCEL/octacel-ci`. The installed organization runner reports v13.1.0.
+The active Forgejo instance reported `15.0.11+gitea-1.22.0` on 2026-11-07. Forgejo v15 supports reusable workflows through `workflow_call`, cross-repository workflow references, input/output contracts, and job expansion. The canonical public framework repository is `https://git.octacel.com/ahmed.al-zanam/octacel-ci`. Its public user owner keeps the `octaCEL` organization private while allowing Forgejo to resolve cross-repository workflow calls. Consumer workflows and internal checkout steps must use this owner and pin a full commit SHA. The GitHub mirror is at `https://github.com/AhmedZanam/octacel-ci`. The installed organization runner reports v13.1.0.
 
 Every consumer pins the full commit SHA of this repository in its `.forgejo/workflows/ci.yml`; it must not call `main`, a release branch, or a mutable tag. The `versions.json` file records the pinned action and tool references. Review and test a shared framework upgrade in a consumer PR before changing that pin.
 
