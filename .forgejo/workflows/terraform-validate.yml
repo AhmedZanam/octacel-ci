@@ -1,0 +1,70 @@
+name: Reusable Terraform validation
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+      terraform_version:
+        required: true
+        type: string
+      terraform_root:
+        required: true
+        type: string
+
+jobs:
+  terraform:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 30
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - name: Check out project source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: octaCEL/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+
+      - name: Install pinned Terraform and verify its checksum
+        env:
+          TERRAFORM_VERSION: ${{ inputs.terraform_version }}
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates curl unzip
+          archive="$(mktemp)"
+          base="https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}"
+          curl --fail --silent --show-error --location "$base/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" --output "$archive"
+          expected="$(curl --fail --silent --show-error --location "$base/terraform_${TERRAFORM_VERSION}_SHA256SUMS" \
+            | awk -v name="terraform_${TERRAFORM_VERSION}_linux_amd64.zip" '$2 == name {print $1}')"
+          test -n "$expected"
+          printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --status
+          unzip -q "$archive" -d /usr/local/bin
+          rm -f "$archive"
+
+      - name: Check formatting
+        env:
+          TERRAFORM_ROOT: ${{ inputs.terraform_root }}
+        run: terraform -chdir="$TERRAFORM_ROOT" fmt -check -recursive
+
+      - name: Initialize without a backend or credentials
+        env:
+          TERRAFORM_ROOT: ${{ inputs.terraform_root }}
+        run: terraform -chdir="$TERRAFORM_ROOT" init -backend=false -input=false -lockfile=readonly
+
+      - name: Validate configuration
+        env:
+          TERRAFORM_ROOT: ${{ inputs.terraform_root }}
+        run: terraform -chdir="$TERRAFORM_ROOT" validate

@@ -1,0 +1,53 @@
+name: Reusable infrastructure security checks
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+      terraform_root:
+        required: true
+        type: string
+
+jobs:
+  iac:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 30
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1 python3-pip=25.1.1+dfsg-1
+      - name: Check out project source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: octaCEL/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+      - name: Checkov policy scan
+        uses: docker://bridgecrew/checkov@sha256:3cc125b5337717b7303dbddd4e79374c120687b5ff6a24f9abdad56b562469f3
+        with:
+          args: -d ./${{ inputs.terraform_root }} --framework terraform --quiet
+      - name: TFLint
+        uses: docker://ghcr.io/terraform-linters/tflint@sha256:1c595f42d794c32c45a6ea8b58655fd66433d4ca3b1bc631c574a48d120bd19f
+        with:
+          args: --chdir=${{ inputs.terraform_root }} --format=compact
+      - name: Install pinned ShellCheck
+        run: python3 -m pip install --disable-pip-version-check --break-system-packages shellcheck-py==0.11.0.1
+      - name: Check shell scripts
+        run: |
+          set -euo pipefail
+          mapfile -d '' scripts < <(find . -type f -name '*.sh' -not -path './.git/*' -print0)
+          if ((${#scripts[@]} == 0)); then
+            echo 'No shell scripts found; ShellCheck is not applicable.'
+          else
+            shellcheck -x "${scripts[@]}"
+          fi

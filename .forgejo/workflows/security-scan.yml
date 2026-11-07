@@ -1,0 +1,192 @@
+name: Reusable source security and dependency scans
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+
+jobs:
+  workflow-syntax:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 15
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: octaCEL/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+      - name: Install pinned actionlint
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates curl tar
+          archive="$(mktemp)"
+          curl --fail --silent --show-error --location \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 "$archive" | sha256sum --check --status
+          tar -xzf "$archive" --directory /usr/local/bin actionlint
+          rm -f "$archive"
+      - name: Validate Forgejo and GitHub Actions syntax
+        run: |
+          set -euo pipefail
+          mapfile -d '' files < <(find .forgejo/workflows .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -not -path '*/node_modules/*' -print0 2>/dev/null)
+          if ((${#files[@]} > 0)); then
+            actionlint -config-file .octacel-ci/policies/actionlint.yaml "${files[@]}"
+          else
+            echo 'No workflow files are present; syntax validation is not applicable.'
+          fi
+
+  gitleaks:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 20
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Detect secrets with redacted output
+        uses: docker://ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        with:
+          args: detect --source . --redact --no-banner --exit-code 1
+
+  semgrep:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 25
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Create private scan report directory
+        run: mkdir -p .ci-reports
+      - name: Check out the pinned local policy
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: octaCEL/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+      - name: Scan source for security issues without logging findings
+        id: scan
+        continue-on-error: true
+        uses: docker://returntocorp/semgrep@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af
+        with:
+          args: scan --json --output .ci-reports/semgrep.json --config .octacel-ci/policies/semgrep.yml --config p/security-audit --error --metrics=off .
+      - name: Enforce Semgrep policy without exposing source excerpts
+        if: always() && steps.scan.outcome != 'skipped'
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: python3 .octacel-ci/scripts/validate_semgrep_report.py .ci-reports/semgrep.json "$SCAN_OUTCOME"
+      - name: Remove private Semgrep report
+        if: always()
+        run: rm -f .ci-reports/semgrep.json
+
+  osv:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 25
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Create scan report directory
+        run: mkdir -p .ci-reports
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: octaCEL/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+      - name: Scan dependencies
+        id: scan
+        continue-on-error: true
+        uses: docker://ghcr.io/google/osv-scanner@sha256:4f3b7e2c64b9d38a5febc5a7e4a3dfef1d1362f726dea7a2ef4762b46469fcd0
+        with:
+          args: scan source -r . --format json --output-file .ci-reports/osv.json
+      - name: Enforce high and critical dependency policy
+        run: python3 .octacel-ci/scripts/validate_osv_report.py .ci-reports/osv.json
+  trivy:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 25
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Create private scan report directory
+        run: mkdir -p .ci-reports
+      - name: Scan source, IaC, and secrets without logging matches
+        id: scan
+        continue-on-error: true
+        uses: docker://aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        with:
+          args: fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed=false --quiet --format json --output .ci-reports/trivy.json .
+      - name: Enforce Trivy policy without exposing secret matches
+        if: always() && steps.scan.outcome != 'skipped'
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: python3 .octacel-ci/scripts/validate_trivy_report.py .ci-reports/trivy.json "$SCAN_OUTCOME"
+      - name: Remove private Trivy report
+        if: always()
+        run: rm -f .ci-reports/trivy.json
+
+  sbom:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 20
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Generate source SBOM
+        run: mkdir -p .ci-artifacts
+      - name: Write SPDX SBOM
+        uses: docker://ghcr.io/anchore/syft@sha256:4cc92b64ca74ffca4c94d4c8fcc01f217731375300be14d0b6eeb2e82eaa110a
+        with:
+          args: dir:. -o spdx-json=.ci-artifacts/source.spdx.json
+      - name: Publish SBOM workflow artifact
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32
+        with:
+          name: source-sbom
+          path: .ci-artifacts/source.spdx.json
+          if-no-files-found: error

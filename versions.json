@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "testedAt": "2026-11-07",
+  "forgejoMinimum": "15.0.0",
+  "runnerMinimum": "13.1.0",
+  "actions": {
+    "checkout": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+    "setupNode": "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+    "uploadArtifact": "actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32"
+  },
+  "toolImages": {
+    "node": "docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446",
+    "gitleaks": "ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f",
+    "semgrep": "returntocorp/semgrep@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af",
+    "osvScanner": "ghcr.io/google/osv-scanner@sha256:4f3b7e2c64b9d38a5febc5a7e4a3dfef1d1362f726dea7a2ef4762b46469fcd0",
+    "trivy": "aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb",
+    "syft": "ghcr.io/anchore/syft@sha256:4cc92b64ca74ffca4c94d4c8fcc01f217731375300be14d0b6eeb2e82eaa110a",
+    "checkov": "bridgecrew/checkov@sha256:3cc125b5337717b7303dbddd4e79374c120687b5ff6a24f9abdad56b562469f3",
+    "tflint": "ghcr.io/terraform-linters/tflint@sha256:1c595f42d794c32c45a6ea8b58655fd66433d4ca3b1bc631c574a48d120bd19f",
+    "supabasePostgres": "ghcr.io/supabase/postgres:15.8.1.060@sha256:0e2279598bc0224fb5960c3a61eb23270cd60119427f3a7bdec86ba282600dcc"
+  },
+  "standaloneTools": {
+    "actionlint": "1.7.12",
+    "jsonschema": "4.25.1",
+    "shellcheckPy": "0.11.0.1",
+    "terraformDefault": "1.16.6"
+  },
+  "debianTrixiePackages": {
+    "git": "1:2.47.3-0+deb13u1",
+    "python3": "3.13.5-1",
+    "python3Pip": "25.1.1+dfsg-1",
+    "buildah": "1.39.3+ds1-1+b7",
+    "netavark": "1.14.0-2",
+    "aardvarkDns": "1.14.0-3",
+    "podman": "5.4.2+ds1-2+b2",
+    "systemd": "257.13-1~deb13u1",
+    "systemdContainer": "257.13-1~deb13u1",
+    "postgresqlClient": "17+278"
+  }
+}

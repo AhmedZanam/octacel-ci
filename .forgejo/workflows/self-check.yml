@@ -1,0 +1,53 @@
+name: octacel-ci self-check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 20
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1 python3-pip=25.1.1+dfsg-1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install YAML and shell validators
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends curl tar
+          python3 -m pip install --disable-pip-version-check --break-system-packages pyyaml==6.0.3 jsonschema==4.25.1
+          archive="$(mktemp)"
+          curl --fail --silent --show-error --location \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 "$archive" | sha256sum --check --status
+          tar -xzf "$archive" --directory /usr/local/bin actionlint
+          rm -f "$archive"
+      - name: Run shared tooling tests and validate shipped files
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q scripts tests
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import yaml
+          for path in Path('.').rglob('*.json'):
+              json.loads(path.read_text(encoding='utf-8'))
+          for path in Path('.forgejo/workflows').glob('*.yml'):
+              yaml.safe_load(path.read_text(encoding='utf-8'))
+          PY
+          find scripts .forgejo/workflows -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+          python3 scripts/validate_workflow_pins.py .forgejo/workflows
+          actionlint -config-file .github/actionlint.yaml .forgejo/workflows/*.yml
+          git diff --check

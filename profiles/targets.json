@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "measurementNote": "CPU, memory, and root filesystem size were measured read-only on the hosts on 2026-11-07. This records capacity only; it does not claim service startup, health checks, port availability, free disk space, load headroom, or runtime compatibility.",
+  "runnerHost": {
+    "status": "measured-live",
+    "architecture": "amd64",
+    "providerInstance": "vmd211205",
+    "role": "shared-infrastructure-runner",
+    "capacity": {
+      "cpuCount": 6,
+      "memoryMiB": 11960,
+      "rootStorageGiB": 192
+    },
+    "observedAt": "2026-11-07",
+    "evidence": "read-only SSH: nproc, /proc/meminfo, df -BKi /; reserved for shared infrastructure and CI runners, not application deployment targets"
+  },
+  "targets": {
+    "contabo-vps41-development": {
+      "status": "measured-live",
+      "architecture": "amd64",
+      "providerInstance": "vmd211203",
+      "role": "development",
+      "capacity": {
+        "cpuCount": 4,
+        "memoryMiB": 7941,
+        "rootStorageGiB": 95
+      },
+      "observedAt": "2026-11-07",
+      "evidence": "read-only SSH: nproc, /proc/meminfo, df -BKi /"
+    },
+    "contabo-vps42-staging": {
+      "status": "measured-live",
+      "architecture": "amd64",
+      "providerInstance": "vmd211204",
+      "role": "staging-and-website",
+      "capacity": {
+        "cpuCount": 4,
+        "memoryMiB": 7941,
+        "rootStorageGiB": 95
+      },
+      "observedAt": "2026-11-07",
+      "evidence": "read-only SSH: nproc, /proc/meminfo, df -BKi /"
+    },
+    "oci-riyadh-amd64": {
+      "status": "planned-unverified",
+      "architecture": "amd64",
+      "provider": "Oracle Cloud Infrastructure Riyadh",
+      "capacity": null,
+      "reason": "OCI production account and compute resources are not provisioned."
+    },
+    "oci-riyadh-arm64": {
+      "status": "planned-unverified",
+      "architecture": "arm64",
+      "provider": "Oracle Cloud Infrastructure Riyadh",
+      "capacity": null,
+      "reason": "OCI production account and compute resources are not provisioned."
+    }
+  }
+}

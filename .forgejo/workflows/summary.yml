@@ -1,0 +1,38 @@
+name: Reusable required-check summary
+
+on:
+  workflow_call:
+    inputs:
+      framework_ref:
+        required: true
+        type: string
+      expected_workflows_json:
+        required: true
+        type: string
+      needs_json:
+        required: true
+        type: string
+
+jobs:
+  summary:
+    runs-on: octacel-org-ci
+    container: docker.io/library/node:24-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+    timeout-minutes: 10
+    steps:
+      - name: Install pinned checkout prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates git=1:2.47.3-0+deb13u1 python3=3.13.5-1
+      - name: Check out the pinned CI framework
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: octaCEL/octacel-ci
+          ref: ${{ inputs.framework_ref }}
+          path: .octacel-ci
+          persist-credentials: false
+      - name: Require all applicable checks to succeed
+        env:
+          EXPECTED_WORKFLOWS_JSON: ${{ inputs.expected_workflows_json }}
+          NEEDS_JSON: ${{ inputs.needs_json }}
+        run: python3 .octacel-ci/scripts/summarize_results.py "$NEEDS_JSON" "$EXPECTED_WORKFLOWS_JSON"
